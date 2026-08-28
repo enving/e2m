@@ -2,6 +2,28 @@
 
 PDF/DOCX-to-Markdown conversion stack built on [Docling](https://github.com/docling-project/docling-serve), tuned for knowledge-management/RAG pipelines. Runs natively on macOS for best OCR and GPU performance; Docker fallback available for other platforms.
 
+## Goal
+
+Two problems, one pipeline — and no coding required to use it:
+
+**Sensitive data shouldn't have to leave your computer to become useful to AI.**
+The usual way to make a document searchable or usable by an AI tool is to
+upload it to a cloud service first — a scanned contract, an HR file, a
+certificate with someone's name and address on it. That upload is exactly
+the moment personal or confidential data leaves your control. This project
+moves that step onto your own Mac instead: the scan-to-text conversion runs
+locally, and the optional anonymization step (blacking out names, emails,
+IBANs, addresses) also runs locally, *before* the text ever reaches a cloud
+AI model. If you choose not to use a cloud AI at all, nothing ever leaves
+your machine.
+
+**Turning a folder of PDFs into a usable, searchable knowledge base is
+normally a lot of manual work.** Copying text out of scans, cleaning it up,
+tagging it, giving it consistent structure — that's hours of tedious work
+per document. Here it's one keyboard shortcut: select a file, press a key
+combination, and a few seconds later you have a clean, tagged, search-ready
+document — no terminal, no coding, no manual copy-pasting.
+
 ## Prerequisites
 
 - **macOS** (Intel or Apple Silicon)
