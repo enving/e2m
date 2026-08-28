@@ -1,0 +1,30 @@
+services:
+  docling:
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling-serve
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    command: ["docling-serve", "run", "--host", "0.0.0.0", "--port", "5001", "--no-enable-ui"]
+    environment:
+      # Set these if you're behind a corporate proxy (needed for model downloads):
+      # HTTP_PROXY: http://your-proxy:port
+      # HTTPS_PROXY: http://your-proxy:port
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,open-webui,docling,docling-serve
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,open-webui,docling,docling-serve
+      DOCLING_SERVE_ENABLE_UI: "0"
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "true"
+      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "true"
+      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: "false"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "600"
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
+      DOCLING_NUM_THREADS: "4"
+      UVICORN_HOST: "0.0.0.0"
+      UVICORN_PORT: "5001"
+    volumes:
+      - docling-cache:/opt/app-root/src/.cache
+      - docling-scratch:/tmp/docling
+
+volumes:
+  docling-cache:
+  docling-scratch:
