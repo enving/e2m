@@ -26,13 +26,28 @@ the machine.
 
 ## Install
 
+Start `docling-serve` first (see the parent repo's `README.md` — clone the
+repo, run `./start_docling_native.sh`), then from inside this `doc2md/`
+folder:
+
 ```bash
+cd doc2md   # skip if you're already here
+pip install requests
 cp doc_to_markdown.py doc_to_markdown_dialog.py "$HOME/.local/bin/"
 echo 'alias doc2md="python3 $HOME/.local/bin/doc_to_markdown.py"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Try it once from the terminal to confirm it works before setting up the
+Quick Action or VSCode keybinding below:
+
+```bash
+doc2md ~/Downloads/some-document.pdf
 ```
 
 The repo copies are the source of truth; the `~/.local/bin/` copies are what
-actually run (Quick Actions and VSCode tasks call fixed paths there).
+actually run (Quick Actions and VSCode tasks call fixed paths there). If you
+edit `doc_to_markdown.py` later, re-run the `cp` step to redeploy it.
 
 ### Terminal
 
