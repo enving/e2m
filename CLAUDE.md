@@ -25,7 +25,7 @@ Der Wechsel von Container-Tesseract auf natives ocrmac hat die deutschen OCR-Feh
 
 | Komponente | Wo | Details |
 |---|---|---|
-| docling-serve 1.26 | nativ, Port 5001 | venv: `./docling-native/`, Start: `./start_docling_native.sh` |
+| docling-serve 1.32 | nativ, Port 5001 | venv: `~/.local/share/doc2md/docling-native/`, Start: `./start_docling_native.sh`, Autostart: `./install-docling-agent.sh` |
 | OCR | ocrmac (Apple Vision) | `de-DE`+`en-US`, recognition=accurate; via Custom-Preset auf `"auto"` gemappt |
 | GPU | MPS (Metal) | torch.backends.mps aktiv für Layout-/Tabellen-Modelle |
 | Ollama | nativ, Port 11434 | `ibm/granite-docling:258m`, `granite3.3-vision:2b`, `gemma4` |
@@ -34,9 +34,26 @@ Der Wechsel von Container-Tesseract auf natives ocrmac hat die deutschen OCR-Feh
 ### Start / Stop
 
 ```bash
-./start_docling_native.sh          # stoppt automatisch den Docker-Container (Port-Konflikt)
-# Log: /tmp/docling-native.log
+./install-docling-agent.sh         # einmalig: LaunchAgent, startet bei jedem Login
+./install-docling-agent.sh --uninstall
+
+./start_docling_native.sh          # manuell; stoppt den Docker-Container (Port-Konflikt)
+# Log des Dienstes: ~/Library/Logs/docling-serve.log
 ```
+
+Ohne den LaunchAgent lebt der Server nur so lange wie das Terminal, in dem er
+gestartet wurde — und die doc2md-Shortcuts scheitern dann mit „docling-serve
+läuft nicht". `doc_to_markdown.py` fährt den Dienst inzwischen selbst hoch
+(`ensure_docling_service()`), aber der Agent ist der eigentliche Fix.
+
+### venv liegt NICHT im Repo
+
+`~/.local/share/doc2md/docling-native/` statt `./docling-native/`. Grund ist
+macOS TCC: liegt das Repo unter `~/Documents` (oder `~/Desktop`, `~/Downloads`),
+darf ein LaunchAgent dort **nichts ausführen** — `Operation not permitted`, noch
+bevor das Start-Skript anläuft. `~/.local/share` ist nicht TCC-geschützt.
+`start_docling_native.sh` sucht in dieser Reihenfolge: `$DOC2MD_VENV` >
+`./docling-native/` (für lokale Entwicklung) > Service-Ort.
 
 ### Wichtige Erkenntnisse (nicht erneut ausprobieren)
 
@@ -62,13 +79,16 @@ Der Wechsel von Container-Tesseract auf natives ocrmac hat die deutschen OCR-Feh
 
 | Datei | Zweck |
 |---|---|
+| `install.sh` | Komplett-Installation in einem Schritt (idempotent, auch für Coding-Agenten) |
+| `AGENTS.md` | Installations- und Prüfanleitung für Coding-Agenten |
 | `start_docling_native.sh` | Startet nativen docling-serve (ocrmac + MPS) |
 | `docling_convert.sh` | CLI-Wrapper für Konvertierungen (`--vlm`, `--force-ocr`, `--async`, `--pages`) |
 | `DOCLING_API.md` | Vollständige API-Referenz inkl. nicht-offensichtlicher Parameter |
 | `DOCLING_ERKENNTNISSE.md` | Test-Erkenntnisse + Specs/Empfehlungen für zukünftiges zentrales Hosting (Ubuntu/GPU) |
 | `compose.yaml` | Docker-Fallback (gestoppt); enthält Tesseract-Setup mit `./tessdata/` |
 | `openwebui-docling-params.json` | Docling-Optionen für die OpenWebUI-Integration |
-| `docling-native/` | Python-venv der nativen Installation (nicht committen) |
+| `install-docling-agent.sh` | LaunchAgent für den Autostart; verschiebt das venv bei Bedarf an den TCC-sicheren Ort |
+| `~/.local/share/doc2md/` | Laufzeit: venv + Kopie des Start-Skripts (nicht im Repo) |
 
 ### Standard-API-Call
 

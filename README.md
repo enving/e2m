@@ -24,89 +24,100 @@ per document. Here it's one keyboard shortcut: select a file, press a key
 combination, and a few seconds later you have a clean, tagged, search-ready
 document — no terminal, no coding, no manual copy-pasting.
 
-## Prerequisites
+## What you get
 
-- **macOS** (Intel or Apple Silicon)
-- **Python 3** (version requirement: not explicitly documented in repo; see note below)
-- **curl** (for API calls; included on macOS)
-- **Ollama** (optional, for VLM-based image description and complex document layout)
+| Shortcut (Finder, file selected) | Right-click → Quick Actions | Result |
+|---|---|---|
+| `Cmd+Shift+M` | Convert to Markdown | clean `.md` with YAML frontmatter next to the original |
+| `Cmd+Ctrl+M` | Convert to Markdown with Tags | + topic tags from a local AI model |
+| `Cmd+Ctrl+Opt+M` | Convert to Markdown pseudonymisiert | + tags + personal data replaced by tokens (`[PERSON_1]`, `[EMAIL_2]`, `[IBAN_1]` …), reversible via a key file kept apart |
 
-**Installation note:** The exact pip install command for docling-serve is not documented in this repo. The server version is docling-serve 1.26. You'll need to install it into a Python venv (see Setup below).
+Plus `doc2md file.pdf` in the terminal, a VSCode keybinding, and a local
+HTTP API (`http://localhost:5001`) for OpenWebUI or your own scripts.
+Works for PDF (native and scanned), DOCX, PPTX, HTML and images.
 
-## Installation
+## Install
 
-### 1. Clone and enter the repo
+**Requirements:** macOS (Apple Silicon or Intel), ~6 GB free disk space
+(+2.5 GB for the AI model), Xcode Command Line Tools
+(`xcode-select --install` if you don't have them).
 
-```bash
-git clone <repo-url>
-cd Everything2Markdown
-```
+### Easiest: let your coding agent do it
 
-### 2. Create and activate a Python venv
+Paste this into Claude Code, Codex, Cursor or any coding agent with terminal access:
 
-```bash
-python3 -m venv docling-native
-source docling-native/bin/activate
-```
+> Install https://github.com/enving/e2m on my Mac. Clone it, follow its
+> `AGENTS.md`, verify that a test conversion works, and then tell me how to use
+> the keyboard shortcuts.
 
-### 3. Install docling-serve
+[`AGENTS.md`](AGENTS.md) contains the checks, the verification steps and
+the known pitfalls, so the agent does not have to guess.
 
-The exact pip command is not pinned in the repo. Install the package:
-
-```bash
-pip install docling-serve
-```
-
-(If you need a specific version, try `pip install docling-serve==1.26` based on the version documented in DOCLING_API.md, but this is not explicitly recommended in the codebase.)
-
-### 4. Start the native server
+### Or yourself, in the terminal
 
 ```bash
-./start_docling_native.sh
+git clone https://github.com/enving/e2m.git ~/e2m
+cd ~/e2m
+./install.sh --with-ollama
 ```
 
-The script:
-- Stops any running Docker `docling-serve` container (port 5001 conflict)
-- Sets up ocrmac (Apple Vision) OCR with German+English language support
-- Enables Metal GPU (MPS) for layout and table models
-- Logs to `/tmp/docling-native.log`
+That one command:
 
-**Behind a corporate proxy?** Set `HTTP_PROXY` and `HTTPS_PROXY` before running:
+1. creates a Python venv in `~/.local/share/doc2md/` and installs
+   docling-serve 1.32 + `ocrmac` (Apple Vision OCR),
+2. registers a LaunchAgent so the server starts at every login,
+3. installs the `doc2md` command and the three Finder Quick Actions with
+   their shortcuts,
+4. with `--with-ollama`: installs [Ollama](https://ollama.com) via Homebrew
+   and pulls `qwen3:4b` for tags and name detection.
+
+The first run downloads several GB and takes a while; running it again is
+safe and repairs a broken install. Leave out `--with-ollama` if you only
+want plain conversion. `./install.sh --uninstall` removes it again.
+
+**Behind a corporate proxy?** `export HTTP_PROXY=… HTTPS_PROXY=…` first.
+
+Check it works:
 
 ```bash
-export HTTP_PROXY="http://proxy-host:port"
-export HTTPS_PROXY="http://proxy-host:port"
-./start_docling_native.sh
+curl http://localhost:5001/health     # {"status":"ok"}
+doc2md ~/Downloads/some-document.pdf  # writes some-document.md next to it
 ```
 
-### 5. Verify the server is running
+### What happens under the hood (manual setup)
+
+<details>
+<summary>Step by step, if you'd rather not run the installer</summary>
 
 ```bash
-curl http://localhost:5001/health
-# Expected: {"status": "ok"} or similar
+# 1. venv OUTSIDE ~/Documents — macOS privacy protection (TCC) forbids a
+#    LaunchAgent from executing anything under ~/Documents, ~/Desktop, ~/Downloads
+python3.12 -m venv ~/.local/share/doc2md/docling-native
+~/.local/share/doc2md/docling-native/bin/pip install "docling-serve==1.32.0" ocrmac
+
+# 2. start at login (also copies start_docling_native.sh next to the venv)
+./install-docling-agent.sh
+#    status: launchctl print gui/$(id -u)/com.doc2md.docling-serve
+#    log:    tail -f ~/Library/Logs/docling-serve.log
+#    manual start instead: ./start_docling_native.sh
+
+# 3. doc2md command + Finder Quick Actions + shortcuts
+/usr/bin/python3 -m pip install --user requests
+./doc2md/install-quick-actions.sh
+
+# 4. optional: local AI model for tags and pseudonymization
+brew install ollama && brew services start ollama && ollama pull qwen3:4b
 ```
 
-Open the API docs in your browser:
+`start_docling_native.sh` configures ocrmac for German + English, Metal
+(MPS) GPU acceleration and stops a Docker `docling-serve` container if one
+occupies port 5001. For VLM-based layout analysis you can additionally pull
+`ibm/granite-docling:258m` and `granite3.3-vision:2b`; see `DOCLING_API.md`.
 
-```bash
-open http://localhost:5001/docs
-```
+</details>
 
-### 6. (Optional) Set up Ollama for VLM features
 
-If you want advanced image descriptions or VLM-based document layout analysis:
-
-```bash
-# Install Ollama from https://ollama.com
-# Then pull models used by this project:
-ollama pull ibm/granite-docling:258m
-ollama pull granite3.3-vision:2b
-ollama pull gemma4
-```
-
-Ollama runs locally on port 11434. If you're behind a corporate proxy, `ollama pull` may fail. Workaround: download models manually and import them (see DOCLING_ERKENNTNISSE.md for details).
-
-## First Conversion
+## Using the API directly (curl)
 
 ### Simple PDF → Markdown
 
@@ -164,8 +175,8 @@ Instead of curl, you can use the included CLI wrappers:
 - **GPU:** Metal (MPS) for layout and table models
 - **Language:** de-DE + en-US
 - **Performance:** Bilder ~1–3 s each, pages ~3–8 s with VLM
-- **How to start:** `./start_docling_native.sh`
-- **Logs:** `/tmp/docling-native.log`
+- **How to start:** `./install-docling-agent.sh` once, then automatic at login
+- **Logs:** `~/Library/Logs/docling-serve.log`
 - **Pros:** Fastest OCR for German, GPU acceleration, local-only
 - **Cons:** macOS only
 
@@ -184,15 +195,17 @@ docker compose down
 - Slower than native
 - See `compose.yaml` for configuration
 
-## Optional: Keyboard Shortcut / Finder Integration (doc2md)
+## Keyboard Shortcuts, Finder and Pseudonymization (doc2md)
 
-A companion tool for macOS keyboard shortcuts, Finder Quick Actions, and VSCode integration that wraps this API with YAML frontmatter and optional local anonymization:
+`install.sh` sets these up. `doc2md` wraps the API with YAML frontmatter,
+optional tags and optional local anonymization/pseudonymization:
 
-- **Finder Quick Action:** right-click → "Convert to Markdown"
-- **VSCode:** Cmd+Shift+M to convert the open file
-- **Terminal:** `doc2md file.pdf`
+- **Finder:** `Cmd+Shift+M` / `Cmd+Ctrl+M` / `Cmd+Ctrl+Opt+M` or right-click → Quick Actions (see [What you get](#what-you-get))
+- **VSCode:** `Cmd+Shift+M` to convert the open file
+- **Terminal:** `doc2md file.pdf`, `doc2md --tags --pii pseudo --pii-map-dir ~/keys file.pdf`
 
-See [`doc2md/README.md`](doc2md/README.md) for setup.
+Details, all options and the honest limits of name detection:
+[`doc2md/README.md`](doc2md/README.md).
 
 ## OpenWebUI Integration
 
@@ -221,11 +234,19 @@ Then restart: `./start_docling_native.sh`
 
 ```bash
 # Verify venv exists and has docling-serve:
-ls docling-native/bin/docling-serve
-docling-native/bin/docling-serve --version
+ls ~/.local/share/doc2md/docling-native/bin/docling-serve
+~/.local/share/doc2md/docling-native/bin/docling-serve --version
 ```
 
-If missing: re-run steps 2–3 in Installation.
+If missing: run `./install.sh` again — it repairs the venv and the autostart.
+
+### Shortcut does nothing
+
+Check `~/Library/Logs/doc2md.log`. No new `argv=` line → the keystroke never
+reached the Quick Action: run `./doc2md/install-quick-actions.sh` again (it
+binds the key in both places macOS uses and restarts Finder) and restart the
+app you pressed it in. A new line followed by a long wait → it is working;
+large PDFs take minutes and notify you at the end.
 
 ### Conversion fails or poor OCR quality
 
@@ -233,13 +254,13 @@ Verify the native server is running (not Docker):
 
 ```bash
 lsof -i :5001
-# Process should be "Python" from ./docling-native/, not a Docker container
+# Process should be "Python" from ~/.local/share/doc2md/docling-native/, not Docker
 ```
 
 Check the log:
 
 ```bash
-tail -f /tmp/docling-native.log
+tail -f ~/Library/Logs/docling-serve.log
 ```
 
 ### Ollama models won't pull (behind corporate proxy)
@@ -254,7 +275,10 @@ OCR/conversion errors are fixed at the source (OCR engine, input resolution, mod
 
 | File | Purpose |
 |---|---|
+| `install.sh` | One-step installer: venv, autostart, doc2md, shortcuts, optional Ollama |
+| `AGENTS.md` | Install and verification instructions for coding agents |
 | `start_docling_native.sh` | Starts native docling-serve (ocrmac + MPS) |
+| `install-docling-agent.sh` | Installs the LaunchAgent so the server starts at login |
 | `docling_convert.sh` | CLI wrapper with options: `--vlm`, `--force-ocr`, `--async`, `--pages`, etc. |
 | `examples/convert-file.sh` | Minimal conversion example |
 | `DOCLING_API.md` | Full API reference: all endpoints, parameters, presets, custom configs |

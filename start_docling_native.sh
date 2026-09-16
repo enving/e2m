@@ -4,7 +4,25 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
-VENV="$REPO/docling-native"
+
+# Wo liegt das venv? Reihenfolge: explizit gesetzt > im Repo > Service-Ort.
+#
+# Der Service-Ort ist NICHT optional-hübsch, sondern notwendig: liegt das Repo
+# unter ~/Documents (oder ~/Desktop, ~/Downloads), darf ein LaunchAgent dort
+# wegen macOS TCC nichts ausführen — "Operation not permitted", noch bevor das
+# Skript startet. ~/.local/share ist nicht TCC-geschützt.
+if [ -n "${DOC2MD_VENV:-}" ]; then
+  VENV="$DOC2MD_VENV"
+elif [ -x "$REPO/docling-native/bin/docling-serve" ]; then
+  VENV="$REPO/docling-native"
+else
+  VENV="$HOME/.local/share/doc2md/docling-native"
+fi
+
+if [ ! -x "$VENV/bin/docling-serve" ]; then
+  echo "docling-serve nicht gefunden in $VENV — siehe README, Abschnitt Installation." >&2
+  exit 1
+fi
 
 # Docker-Variante stoppen falls sie läuft (Port 5001 Konflikt)
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^docling-serve$'; then

@@ -9,34 +9,49 @@ the machine.
 
 - **Multi-format** — PDF, DOCX, PPTX, HTML, images, and more
 - **Finder Quick Action** — right-click → "Convert to Markdown"
-- **Global keyboard shortcut** — via the Quick Action
+- **Keyboard shortcuts** — `Cmd+Shift+M` convert, `Cmd+Ctrl+M` convert + tag,
+  `Cmd+Ctrl+Opt+M` convert + tag + pseudonymize (mapping goes to
+  `~/Documents/doc2md-mappings/`, not next to the `.md`)
+- **Right-click** → Quick Actions → the same three entries
 - **Terminal command** — `doc2md file.pdf`
 - **VSCode task + keybinding** — `Cmd+Shift+M`
 - **Metadata frontmatter** — YAML with source path, timestamps, OKF `type` field
-- **Optional `--enrich`** — local PII anonymization + Ollama topic tags
+- **Optional `--tags`** — topic keywords from a local Ollama model
+- **Optional `--pii`** — anonymize *or* pseudonymize, fully local
 
 ## Requirements
 
-- `docling-serve` running (see the parent repo's `../start_docling_native.sh`
-  or `../compose.yaml`)
+- `docling-serve` running. Set it up to start at login with the parent repo's
+  `../install-docling-agent.sh` — otherwise the shortcuts fail as soon as the
+  terminal that started the server is gone.
 - Python 3 with `requests` installed
-- Optional: [Ollama](https://ollama.com) for `--enrich` tagging
+- Optional: [Ollama](https://ollama.com) for `--tags` and local name detection
+  (`brew install ollama && brew services start ollama && ollama pull qwen3:4b`)
 - Optional: an anonymizer service for name-level `--enrich` masking — see
   below, not required (regex fallback covers email/IBAN/phone/address)
 
 ## Install
 
-Start `docling-serve` first (see the parent repo's `README.md` — clone the
-repo, run `./start_docling_native.sh`), then from inside this `doc2md/`
-folder:
+The parent repo's installer does everything, including docling-serve:
 
 ```bash
-cd doc2md   # skip if you're already here
-pip install requests
-cp doc_to_markdown.py doc_to_markdown_dialog.py "$HOME/.local/bin/"
-echo 'alias doc2md="python3 $HOME/.local/bin/doc_to_markdown.py"' >> ~/.zshrc
-source ~/.zshrc
+cd ..            # repo root
+./install.sh --with-ollama
 ```
+
+If docling-serve is already running and you only want (or want to refresh)
+doc2md itself:
+
+```bash
+/usr/bin/python3 -m pip install --user requests
+./install-quick-actions.sh
+```
+
+That copies the converter to `~/.local/bin/`, creates the `doc2md` command
+there, builds the three `.workflow` bundles and binds the shortcuts — it
+replaces the manual Automator + System Settings walkthrough documented
+below. Keep reading if you'd rather do it by hand or want to change what
+the actions run.
 
 Try it once from the terminal to confirm it works before setting up the
 Quick Action or VSCode keybinding below:
@@ -47,14 +62,18 @@ doc2md ~/Downloads/some-document.pdf
 
 The repo copies are the source of truth; the `~/.local/bin/` copies are what
 actually run (Quick Actions and VSCode tasks call fixed paths there). If you
-edit `doc_to_markdown.py` later, re-run the `cp` step to redeploy it.
+edit `doc_to_markdown.py` later, re-run `./install-quick-actions.sh` to redeploy it.
 
 ### Terminal
 
 ```bash
 doc2md ~/Downloads/document.pdf
 doc2md file1.pdf file2.docx file3.pptx
-doc2md --enrich report.pdf   # + anonymization + tags, see below
+doc2md --tags report.pdf                      # + topic tags, content untouched
+doc2md --pii pseudo --pii-map report.pdf      # + reversible pseudonymization
+doc2md --pii mask report.pdf                  # + irreversible anonymization
+doc2md --force-ocr scan.pdf                   # only for a broken text layer
+doc2md --no-images big.pdf                    # ~2x faster, skips image descriptions
 ```
 
 ### Finder Quick Action + global shortcut (Automator)
@@ -152,51 +171,174 @@ content), or a gentle heads-up if there's a linked counterpart otherwise.
 It never blocks, and it's silent for files without this frontmatter.
 Project hooks need a one-time approval on the next Claude Code start.
 
-## `--enrich`: anonymization + tags
+## Tagging and PII handling
+
+Both are optional, both run **entirely locally**, and they are separate
+switches — you can tag without touching the text, or mask without tagging.
+When you use both, PII runs **first**, so the tagging model only ever sees
+the already-masked text and no real name can leak into a tag.
+
+### `--tags` — topic keywords
 
 ```bash
-doc2md --enrich report.pdf
+doc2md --tags report.pdf
 ```
 
-Optional, **entirely local** — nothing leaves the machine. Runs anonymization
-*before* tagging, so no unmasked name can leak into a tag:
+A local Ollama model (`qwen3:4b` by default, override with
+`DOC2MD_OLLAMA_MODEL`) reads the document and returns 4–6 German topic tags,
+one of which is the document type. It writes only the `tags:` frontmatter
+key — **the content is not modified**.
 
-1. **Anonymization** (masks exact spans only, never rewrites content):
-   - Preferred: an anonymizer service on `http://localhost:8787`
-     (`DOC2MD_ANON_URL`) — regex (IBAN/email/phone/address) plus NER for
-     names. Not included in this repo (self-host your own; e.g.
-     [headroom](https://github.com/headroomlabs-ai/headroom) is one such
-     service) — point `DOC2MD_ANON_URL` at it. `POST /api/v1/anon/test`
-     with `{"text": "..."}`, response `{"anonymized": "...", "entities_found": N}`.
-   - Fallback if that's unreachable: deterministic regex only
-     (email/IBAN/phone/German street+number, postal-code+city) — **no name
-     detection** in this mode.
-2. **Tags**: a local Ollama model (`gemma4:latest` by default, override with
-   `DOC2MD_OLLAMA_MODEL`) reads the *already-anonymized* text and returns
-   4–6 topic tags, one of which is the document type. Ollama only tags —
-   it never rewrites saved content.
+The request pins a JSON schema (`dokumentart` + `themen`) rather than asking
+for "JSON" in the prompt, and the prompt contains no list of example document
+types. Both matter with a 4B model: without the schema you get a well-formed
+object with the wrong keys and zero tags, and with an example list in the
+prompt the model copies that list verbatim whenever the document's opening
+pages are thin.
 
-Honesty notes: the regex fallback catches no names; the LLM-NER path is
-best-effort and only scans the first ~4000 characters per call. Manual
-review stays necessary either way. The original filename (`source_file`,
-`local_path`) is *not* anonymized — rename the source file first if it
-contains a name.
+Long documents are sampled from beginning, middle and end — the first 6000
+characters of a 113-page PDF are just the cover and the table of contents.
+
+### `--pii` — anonymize or pseudonymize
+
+These are genuinely different things and the flag makes you pick:
+
+| Mode | What it does | Reversible? | Are two people distinguishable? | Detects names? |
+|---|---|---|---|---|
+| `off` *(default)* | nothing | — | — | — |
+| `mask` | **anonymize** — generic placeholders: `[email]`, `[telefon]` | no | **no** — both collapse to `[email]` | via Ollama, best-effort |
+| `pseudo` | **pseudonymize** — consistent tokens: `[EMAIL_1]`, `[PERSON_2]` | yes, via `--pii-map` | yes | via Ollama, best-effort |
+| `service` | delegate to a headroom anonymizer with a real NER model | per that service | per that service | yes, properly |
+| `auto` | `service` if reachable, otherwise `pseudo` | | | |
+
+`pseudo` is pseudonymization in the sense of Art. 4(5) GDPR: the same input
+value always maps to the same token, so the document still tells you that
+two different people were involved and who wrote to whom, and the mapping
+restores the original exactly. `mask` throws that away permanently.
+
+```bash
+doc2md --pii pseudo --pii-map --tags bericht.pdf
+```
+
+`--pii-map` writes `bericht.pii-map.json` next to the `.md` with the
+token → cleartext mapping, mode `0600`. **That file is re-identifying data**
+— it is the reason the pseudonymized `.md` is not anonymous. Store it apart
+from the `.md` and never share the two together. Without it, the tokens are
+not resolvable.
+
+`--pii-map-dir DIR` does the same but writes the mapping into `DIR` (mode
+`0700`) as `<name>-<pathhash>.pii-map.json` — that is what the pseudonymize
+Quick Action uses, so the `.md` and its key never end up in the same folder.
+
+What `pseudo` replaces:
+
+| Token | Source |
+|---|---|
+| `[PERSON_n]` | full name found by Ollama, titles stripped (`Dr. [PERSON_2]`) |
+| `[PERSON_n_NACHNAME]`, `[PERSON_n_VORNAME]` | the same person's name part on its own (`Frau [PERSON_2_NACHNAME]`) |
+| `[NACHNAME_n]` | a surname shared by several people — not attributed to either |
+| `[EMAIL_n]`, `[IBAN_n]`, `[TELEFON_n]` | regex; phone must start with `+` or `0` |
+| `[ADRESSE_n]`, `[ORT_n]` | street + number, postal code + city |
+| `[GEBURTSDATUM_n]` | a date after `geb.`/`geboren`/`Geburtsdatum` — plain dates stay |
+| `[KENNUNG_n]` | number after Personal-/Kunden-/Versicherten-/Steuer-/Ausweis-Nr. etc. |
+
+If Ollama is unreachable, `mask`/`pseudo` **abort** instead of writing a
+file with every name in cleartext.
+
+### Honest limits
+
+- **Name detection in the local modes is best-effort.** `mask` and `pseudo`
+  use the LLM as a stand-in for NER, chunk by chunk over the whole document
+  (one call per ~4000 characters — long documents take noticeably longer). It
+  can miss names; invented ones are dropped because only names that literally
+  occur in the text are used. Only `service` uses a real NER
+  model. Add `--no-names` to skip it entirely and mask only structured PII
+  (email, IBAN, phone, street address, postal code + city) — that part is
+  deterministic regex and reliable.
+- **Manual review stays necessary in every mode.**
+- **The filename is never masked.** `source_file` and `local_path` keep the
+  original name — rename the source file first if it contains a name.
+- The `service` mode needs an anonymizer on `http://localhost:8787`
+  (`DOC2MD_ANON_URL`), not included in this repo; self-host your own, e.g.
+  [headroom](https://github.com/headroomlabs-ai/headroom). It must answer
+  `POST /api/v1/anon/test` with `{"text": "..."}` →
+  `{"anonymized": "...", "entities_found": N}`. If it is not reachable,
+  `--pii service` fails loudly rather than quietly downgrading.
+
+## How long it takes
+
+Conversion is not instant, and the shortcut only notifies you when it
+*starts* and when it *finishes* — there is no progress bar in between.
+Measured on a 62-page, 5.3 MB PDF:
+
+| Pages | default (with image descriptions) | `--no-images` |
+|---|---|---|
+| 62 | 211 s | 103 s |
+| 113 | 365 s | — |
+
+Roughly 3.4 s per page with image descriptions, 1.7 s without. The shortcut
+tells you the estimate up front: the start notification reads
+`⏳ Konvertiere report.pdf — 113 Seiten, ca. 7 min`. Page count comes from
+Spotlight (`mdls`), so a file Spotlight hasn't indexed gets no estimate.
+
+Image description runs a local VLM once per picture — that is the expensive
+part, and it is what turns a chart into a sentence instead of a placeholder.
+Drop it with `--no-images` when you just want the text.
+
+The request timeout is **30 minutes** (`DOC2MD_TIMEOUT`, seconds). It used to
+be 300 s, which a document like the one above blows through as soon as
+anything else is competing for the server's workers.
+
+Pressing the shortcut again while a file is still converting does **not**
+start a second run — the second one sees the lock and exits. Without that,
+three impatient keypresses put three jobs on two workers and all three ran
+into the timeout.
+
+## OCR
+
+OCR is **not** forced by default. The converter uses the PDF's existing text
+layer and only re-runs with OCR (ocrmac / Apple Vision) when that produced
+essentially nothing — i.e. for scans. Forcing OCR on a native text PDF makes
+the result *worse*, not better: you trade a perfect text layer for OCR
+errors like `D8.07.2026` instead of `08.07.2026`.
+
+```bash
+doc2md --force-ocr scan.pdf   # only when the embedded text layer is corrupt
+doc2md --no-ocr native.pdf    # never OCR; image-based PDFs come out empty
+```
 
 ## Testing
 
 ```bash
 python3 test_doc_to_markdown.py   # frontmatter/sync-detection/regex-PII — no network
-python3 test_anon_integrity.py    # anonymizer round-trip — skips if unreachable
+python3 test_pseudonymize.py      # PII modes: consistency + reversibility — no network
+python3 test_anon_integrity.py    # headroom round-trip — skips if unreachable
 ```
 
 ## Troubleshooting
 
-**docling-serve not reachable** — start it (see parent repo `README.md`),
-then `curl http://localhost:5001/health`.
+**docling-serve not reachable** — the converter tries to start it itself
+(`launchctl kickstart` → `bootstrap` → direct launch) and waits for the models
+to load, so a one-off "server is down" usually resolves on its own within a
+minute. If it reports it could not be started, the LaunchAgent is missing:
+run the parent repo's `./install-docling-agent.sh` once. Check with
+`curl http://localhost:5001/health` and
+`tail ~/Library/Logs/docling-serve.log`.
 
 **Quick Action not in Finder menu** — System Settings → Keyboard → App
 Shortcuts, check it's listed and configured for "Files and Folders".
 
-**Conversion fails on a specific PDF** — some PDFs have a corrupted embedded
-text layer; that's a source-file problem `force_ocr=true` (already the
-default here) works around, not a converter bug.
+**Garbled text from a PDF that clearly has selectable text** — its embedded
+text layer is corrupt. Re-run with `--force-ocr` to bypass it. This is a
+source-file problem, not a converter bug.
+
+**Empty or near-empty output** — the PDF is image-based and the OCR fallback
+didn't trigger or found nothing. Force it with `--force-ocr` and check that
+docling-serve started with ocrmac (parent repo's `start_docling_native.sh`).
+
+**`--tags` returns nothing** — check Ollama: `curl localhost:11434/api/tags`.
+The model in `DOC2MD_OLLAMA_MODEL` (default `qwen3:4b`) must be pulled.
+
+**Shortcut does nothing** — the keystroke only reaches apps started *after*
+it was registered; restart the app (`killall Finder` for the Finder). Verify
+with `defaults read NSGlobalDomain NSUserKeyEquivalents`.

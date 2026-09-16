@@ -37,12 +37,15 @@ def open_file_dialog():
     if not files:
         return
 
-    # Run Python converter with selected files
+    # Run Python converter with selected files. Alles, was diesem Skript uebergeben
+    # wurde (z. B. --tags, --pii pseudo), wird an den Converter durchgereicht — so
+    # kann dieselbe Quick Action mit verschiedenen Modi verdrahtet werden.
     converter = os.path.expanduser("~/.local/bin/doc_to_markdown.py")
+    passthrough = sys.argv[1:]
 
-    print(f"Converting {len(files)} file(s)...")
+    print(f"Converting {len(files)} file(s)... flags={passthrough or 'keine'}")
     result = subprocess.run(
-        ["python3", converter] + list(files),
+        ["/usr/bin/python3", converter] + passthrough + list(files),
         capture_output=True,
         text=True
     )
