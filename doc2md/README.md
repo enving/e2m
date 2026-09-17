@@ -342,3 +342,17 @@ The model in `DOC2MD_OLLAMA_MODEL` (default `qwen3:4b`) must be pulled.
 **Shortcut does nothing** — the keystroke only reaches apps started *after*
 it was registered; restart the app (`killall Finder` for the Finder). Verify
 with `defaults read NSGlobalDomain NSUserKeyEquivalents`.
+
+## Tests
+
+Einzige Fremdabhängigkeit ist `requests` (siehe `requirements.txt`).
+
+```bash
+cd doc2md
+uv run --with pytest --with requests pytest -q      # 13 Tests, ohne Installation
+# oder klassisch:
+python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt -r requirements-dev.txt && pytest -q
+```
+
+Die Tests deckten am 2026-09-18 ab: Konsistenz und Umkehrbarkeit der Pseudonymisierung, kein
+PII-Rest, Namensvarianten, gemeinsame Nachnamen, E-Mail-Erkennung, Geburtsdatum und Kennnummern.
